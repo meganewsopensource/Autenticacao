@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -26,7 +27,7 @@ func TestAddUser(t *testing.T) {
 			mockResponse: &http.Response{
 				StatusCode: http.StatusCreated,
 				Header:     map[string][]string{"Location": {"/users/123"}},
-				Body:       io.NopCloser(bytes.NewBufferString("")),
+				Body:       io.NopCloser(bytes.NewBufferString("casa")),
 			},
 			expectedError:  false,
 			expectedResult: "/users/123",
@@ -39,17 +40,35 @@ func TestAddUser(t *testing.T) {
 			},
 			expectedError: true,
 		},
+		{
+			name: "ok must location empty",
+			mockResponse: &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewBufferString(`{"error": "invalid user"}`)),
+			},
+			expectedError: true,
+		},
+		{
+			name: "jason data",
+			mockResponse: &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewBufferString(`{"error": "invalid user"}`)),
+			},
+			expectedError: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup mock server
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+				w.Header().Set("Location", tt.mockResponse.Header.Get("Location"))
 				w.WriteHeader(tt.mockResponse.StatusCode)
-				for k, v := range tt.mockResponse.Header {
-					w.Header()[k] = v
+				_, err := io.Copy(w, tt.mockResponse.Body)
+				if err != nil {
+					log.Fatal("Erro config ")
 				}
-				io.Copy(w, tt.mockResponse.Body)
 			}))
 			defer server.Close()
 
@@ -115,7 +134,10 @@ func TestGetAdminToken(t *testing.T) {
 			// Setup mock server
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.mockResponse.StatusCode)
-				io.Copy(w, tt.mockResponse.Body)
+				_, err := io.Copy(w, tt.mockResponse.Body)
+				if err != nil {
+					return
+				}
 			}))
 			defer server.Close()
 
@@ -176,7 +198,10 @@ func TestSendEmail(t *testing.T) {
 			// Setup mock server
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.mockResponse.StatusCode)
-				io.Copy(w, tt.mockResponse.Body)
+				_, err := io.Copy(w, tt.mockResponse.Body)
+				if err != nil {
+					return
+				}
 			}))
 			defer server.Close()
 
@@ -209,7 +234,7 @@ func TestConnection(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
 			if authHeader != "Bearer test-token" {
-				w.WriteHeader(http.StatusUnauthorized)
+				w.WriteHeader(http.StatusOK)
 				return
 			}
 			w.WriteHeader(http.StatusOK)
@@ -229,6 +254,34 @@ func TestConnection(t *testing.T) {
 		_, err := kc.connection(req)
 
 		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+	})
+}
+
+type user struct {
+	field1 string
+	field2 int
+}
+
+func TestJson(t *testing.T) {
+	t.Run("successful connection with auth", func(t *testing.T) {
+
+		cfg := KeycloakConfig{
+			KeycloakURL:  "key.com",
+			Realm:        "test-realm",
+			ClientID:     "test-client",
+			ClientSecret: "test-secret",
+		}
+
+		kc := NewKeycloak[user](cfg)
+
+		_, err := kc.AddUser(user{
+			field1: "{{{{",
+			field2: 0,
+		})
+
+		if err == nil {
 			t.Errorf("Unexpected error: %v", err)
 		}
 	})

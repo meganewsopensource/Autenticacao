@@ -66,7 +66,13 @@ func (c *config[T]) connection(req *http.Request) (resp *http.Response, err erro
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 
-	_, err = getbody(resp)
+	body, err := getbody(resp)
+
+	println(string(body))
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
 
 	return resp, nil
 }
