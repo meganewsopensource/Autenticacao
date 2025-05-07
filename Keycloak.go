@@ -23,6 +23,39 @@ type config[T any] struct {
 	EndpointURLs   map[string]string
 }
 
+func (c *config[T]) GetUserInformation(username string) ([]T, error) {
+
+	req, err := http.NewRequest("GET", c.EndpointURLs["getUser"]+username, nil)
+
+	token, err := c.getAdminToken()
+
+	req.Header.Add("Authorization", "Bearer "+token)
+
+	client := &http.Client{}
+
+	resp, err := client.Do(req)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to creat request: %w", err)
+	}
+
+	i, err := getbody(resp)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch user information: %w", err)
+	}
+
+	fmt.Printf("JSON recebido: %s\n", string(i))
+
+	var users []T
+	err = json.Unmarshal(i, &users)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal user information: %w", err)
+	}
+
+	return users, nil
+}
+
 func (c *config[T]) AddUser(user T) (string, error) {
 
 	jsonData, err := json.Marshal(user)
@@ -179,13 +212,15 @@ func (c *config[T]) SendEmail(location string) error {
 type Keycloak[T any] interface {
 	AddUser(user T) (string, error)
 	SendEmail(location string) error
+	GetUserInformation(username string) ([]T, error)
 }
 
 func NewKeycloak[T any](cfg KeycloakConfig) Keycloak[T] {
 
 	endpoints := map[string]string{
-		"user":  fmt.Sprintf("%s/admin/realms/%s/users", cfg.KeycloakURL, cfg.Realm),
-		"token": fmt.Sprintf("%s/realms/%s/protocol/openid-connect/token", cfg.KeycloakURL, cfg.Realm),
+		"user":    fmt.Sprintf("%s/admin/realms/%s/users", cfg.KeycloakURL, cfg.Realm),
+		"token":   fmt.Sprintf("%s/realms/%s/protocol/openid-connect/token", cfg.KeycloakURL, cfg.Realm),
+		"getUser": fmt.Sprintf("%s/admin/realms/%s/users?username=", cfg.KeycloakURL, cfg.Realm),
 	}
 
 	return &config[T]{
