@@ -23,9 +23,9 @@ type config[T any] struct {
 	EndpointURLs   map[string]string
 }
 
-func (c *config[T]) GetUserInformation(username string) ([]T, error) {
+func (c *config[T]) GetUserInformation(email string) ([]T, error) {
 
-	req, err := http.NewRequest("GET", c.EndpointURLs["getUser"]+username, nil)
+	req, err := http.NewRequest("GET", c.EndpointURLs["getUser"]+email, nil)
 
 	token, err := c.getAdminToken()
 
@@ -220,7 +220,7 @@ func NewKeycloak[T any](cfg KeycloakConfig) Keycloak[T] {
 	endpoints := map[string]string{
 		"user":    fmt.Sprintf("%s/admin/realms/%s/users", cfg.KeycloakURL, cfg.Realm),
 		"token":   fmt.Sprintf("%s/realms/%s/protocol/openid-connect/token", cfg.KeycloakURL, cfg.Realm),
-		"getUser": fmt.Sprintf("%s/admin/realms/%s/users?username=", cfg.KeycloakURL, cfg.Realm),
+		"getUser": fmt.Sprintf("%s/admin/realms/%s/users?email=", cfg.KeycloakURL, cfg.Realm),
 	}
 
 	return &config[T]{
