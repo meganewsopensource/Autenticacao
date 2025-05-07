@@ -9,7 +9,6 @@ import (
 	"testing"
 )
 
-// TestUser represents a sample user struct for testing
 type TestUser struct {
 	Username string `json:"username"`
 	Email    string `json:"email"`
@@ -56,11 +55,19 @@ func TestAddUser(t *testing.T) {
 			},
 			expectedError: true,
 		},
+		{
+			name: "request erro",
+			mockResponse: &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewBufferString(`{"error": "invalid user"}`)),
+			},
+			expectedError: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Setup mock server
+
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 				w.Header().Set("Location", tt.mockResponse.Header.Get("Location"))
@@ -72,7 +79,6 @@ func TestAddUser(t *testing.T) {
 			}))
 			defer server.Close()
 
-			// Create test config
 			cfg := KeycloakConfig{
 				KeycloakURL:  server.URL,
 				Realm:        "test-realm",
@@ -82,7 +88,6 @@ func TestAddUser(t *testing.T) {
 
 			kc := NewKeycloak[TestUser](cfg)
 
-			// Test AddUser
 			result, err := kc.AddUser(TestUser{
 				Username: "testuser",
 				Email:    "test@example.com",
@@ -131,7 +136,7 @@ func TestGetAdminToken(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Setup mock server
+
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.mockResponse.StatusCode)
 				_, err := io.Copy(w, tt.mockResponse.Body)
@@ -141,7 +146,6 @@ func TestGetAdminToken(t *testing.T) {
 			}))
 			defer server.Close()
 
-			// Create test config
 			cfg := KeycloakConfig{
 				KeycloakURL:  server.URL,
 				Realm:        "test-realm",
@@ -151,7 +155,6 @@ func TestGetAdminToken(t *testing.T) {
 
 			kc := NewKeycloak[TestUser](cfg).(*config[TestUser])
 
-			// Test getAdminToken
 			token, err := kc.getAdminToken()
 
 			if tt.expectedError && err == nil {
@@ -285,4 +288,131 @@ func TestJson(t *testing.T) {
 			t.Errorf("Unexpected error: %v", err)
 		}
 	})
+}
+
+func TestGetUserInformation(t *testing.T) {
+
+	type TestUser struct {
+		ID       string `json:"id"`
+		Username string `json:"username"`
+		Email    string `json:"email"`
+	}
+
+	tests := []struct {
+		name          string
+		mockResponse  *http.Response
+		expectedError bool
+		expectedUsers []TestUser
+	}{
+		{
+			name: "successful user fetch",
+			mockResponse: &http.Response{
+				StatusCode: http.StatusOK,
+				Body: io.NopCloser(bytes.NewBufferString(`[
+                    {"id": "123", "username": "user1", "email": "user1@test.com"},
+                    {"id": "456", "username": "user2", "email": "user2@test.com"}
+                ]`)),
+			},
+			expectedError: false,
+			expectedUsers: []TestUser{
+				{ID: "123", Username: "user1", Email: "user1@test.com"},
+				{ID: "456", Username: "user2", Email: "user2@test.com"},
+			},
+		},
+		{
+			name: "no users found",
+			mockResponse: &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewBufferString(`[]`)),
+			},
+			expectedError: false,
+			expectedUsers: []TestUser{},
+		},
+		{
+			name: "bad request",
+			mockResponse: &http.Response{
+				StatusCode: http.StatusBadRequest,
+				Body:       io.NopCloser(bytes.NewBufferString(`{"error": "invalid request"}`)),
+			},
+			expectedError: true,
+		},
+		{
+			name: "invalid json",
+			mockResponse: &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewBufferString(`invalid json`)),
+			},
+			expectedError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+				switch r.URL.Path {
+
+				case "/realms/test-realm/protocol/openid-connect/token":
+
+					w.WriteHeader(http.StatusOK)
+					_, _ = w.Write([]byte(`{
+            "access_token": "mock-token",
+            "expires_in": 300
+        }`))
+
+				case "/admin/realms/test-realm/users":
+
+					w.WriteHeader(tt.mockResponse.StatusCode)
+
+					_, err := io.Copy(w, tt.mockResponse.Body)
+
+					if err != nil {
+
+						t.Errorf("Failed to write response: %v", err)
+
+					}
+
+				default:
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			defer server.Close()
+
+			// Create test config
+			cfg := KeycloakConfig{
+				KeycloakURL:  server.URL,
+				Realm:        "test-realm",
+				ClientID:     "test-client",
+				ClientSecret: "test-secret",
+			}
+
+			kc := NewKeycloak[TestUser](cfg).(*config[TestUser])
+
+			users, err := kc.GetUserInformation("testuser")
+
+			if tt.expectedError {
+				if err == nil {
+					t.Error("Expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+				return
+			}
+
+			if len(users) != len(tt.expectedUsers) {
+				t.Errorf("Expected %d users, got %d", len(tt.expectedUsers), len(users))
+				return
+			}
+
+			for i, user := range users {
+				if user != tt.expectedUsers[i] {
+					t.Errorf("Expected user %v, got %v", tt.expectedUsers[i], user)
+				}
+			}
+		})
+	}
 }
